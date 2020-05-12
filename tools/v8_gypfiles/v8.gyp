@@ -47,6 +47,8 @@
       "<(V8_ROOT)/src/builtins/frames.tq",
       "<(V8_ROOT)/src/builtins/frame-arguments.tq",
       "<(V8_ROOT)/src/builtins/growable-fixed-array.tq",
+      "<(V8_ROOT)/src/builtins/ic-callable.tq",
+      "<(V8_ROOT)/src/builtins/ic.tq",
       "<(V8_ROOT)/src/builtins/internal-coverage.tq",
       "<(V8_ROOT)/src/builtins/iterator.tq",
       "<(V8_ROOT)/src/builtins/math.tq",
