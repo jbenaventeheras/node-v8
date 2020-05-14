@@ -82,6 +82,7 @@ class BasicBlock;
   V(Word32Equal)                          \
   V(Word32Or)                             \
   V(Word32Sar)                            \
+  V(Word32SarShiftOutZeros)               \
   V(Word32Shl)                            \
   V(Word32Shr)                            \
   V(Word32Xor)                            \
@@ -91,7 +92,9 @@ class BasicBlock;
   V(WordAnd)                              \
   V(WordEqual)                            \
   V(WordSar)                              \
-  V(WordShl)
+  V(WordSarShiftOutZeros)                 \
+  V(WordShl)                              \
+  V(WordXor)
 
 #define CHECKED_ASSEMBLER_MACH_BINOP_LIST(V) \
   V(Int32AddWithOverflow)                    \
@@ -822,6 +825,7 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
   TNode<String> StringSubstring(TNode<String> string, TNode<Number> from,
                                 TNode<Number> to);
   TNode<Boolean> ObjectIsCallable(TNode<Object> value);
+  TNode<Boolean> ObjectIsUndetectable(TNode<Object> value);
   Node* CheckIf(Node* cond, DeoptimizeReason reason);
   TNode<Boolean> NumberIsFloat64Hole(TNode<Number> value);
   TNode<Boolean> ToBoolean(TNode<Object> value);

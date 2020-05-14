@@ -5,14 +5,14 @@
 #ifndef V8_HEAP_SPACES_INL_H_
 #define V8_HEAP_SPACES_INL_H_
 
-#include "src/common/globals.h"
-#include "src/heap/spaces.h"
-
 #include "src/base/atomic-utils.h"
 #include "src/base/bounded-page-allocator.h"
 #include "src/base/v8-fallthrough.h"
+#include "src/common/globals.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/incremental-marking.h"
+#include "src/heap/memory-chunk-inl.h"
+#include "src/heap/spaces.h"
 #include "src/objects/code-inl.h"
 #include "src/sanitizer/msan.h"
 
@@ -123,19 +123,19 @@ void Space::MoveExternalBackingStoreBytes(ExternalBackingStoreType type,
 // -----------------------------------------------------------------------------
 // SemiSpace
 
-bool SemiSpace::Contains(HeapObject o) {
+bool SemiSpace::Contains(HeapObject o) const {
   MemoryChunk* memory_chunk = MemoryChunk::FromHeapObject(o);
   if (memory_chunk->IsLargePage()) return false;
   return id_ == kToSpace ? memory_chunk->IsToPage()
                          : memory_chunk->IsFromPage();
 }
 
-bool SemiSpace::Contains(Object o) {
+bool SemiSpace::Contains(Object o) const {
   return o.IsHeapObject() && Contains(HeapObject::cast(o));
 }
 
-bool SemiSpace::ContainsSlow(Address a) {
-  for (Page* p : *this) {
+bool SemiSpace::ContainsSlow(Address a) const {
+  for (const Page* p : *this) {
     if (p == MemoryChunk::FromAddress(a)) return true;
   }
   return false;
@@ -144,33 +144,35 @@ bool SemiSpace::ContainsSlow(Address a) {
 // --------------------------------------------------------------------------
 // NewSpace
 
-bool NewSpace::Contains(Object o) {
+bool NewSpace::Contains(Object o) const {
   return o.IsHeapObject() && Contains(HeapObject::cast(o));
 }
 
-bool NewSpace::Contains(HeapObject o) {
+bool NewSpace::Contains(HeapObject o) const {
   return MemoryChunk::FromHeapObject(o)->InNewSpace();
 }
 
-bool NewSpace::ContainsSlow(Address a) {
+bool NewSpace::ContainsSlow(Address a) const {
   return from_space_.ContainsSlow(a) || to_space_.ContainsSlow(a);
 }
 
-bool NewSpace::ToSpaceContainsSlow(Address a) {
+bool NewSpace::ToSpaceContainsSlow(Address a) const {
   return to_space_.ContainsSlow(a);
 }
 
-bool NewSpace::ToSpaceContains(Object o) { return to_space_.Contains(o); }
-bool NewSpace::FromSpaceContains(Object o) { return from_space_.Contains(o); }
+bool NewSpace::ToSpaceContains(Object o) const { return to_space_.Contains(o); }
+bool NewSpace::FromSpaceContains(Object o) const {
+  return from_space_.Contains(o);
+}
 
-bool PagedSpace::Contains(Address addr) {
+bool PagedSpace::Contains(Address addr) const {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     return true;
   }
   return Page::FromAddress(addr)->owner() == this;
 }
 
-bool PagedSpace::Contains(Object o) {
+bool PagedSpace::Contains(Object o) const {
   if (!o.IsHeapObject()) return false;
   return Page::FromAddress(o.ptr())->owner() == this;
 }
@@ -207,39 +209,6 @@ bool PagedSpace::TryFreeLast(HeapObject object, int object_size) {
   return false;
 }
 
-void MemoryChunk::IncrementExternalBackingStoreBytes(
-    ExternalBackingStoreType type, size_t amount) {
-#ifndef V8_ENABLE_THIRD_PARTY_HEAP
-  base::CheckedIncrement(&external_backing_store_bytes_[type], amount);
-  owner()->IncrementExternalBackingStoreBytes(type, amount);
-#endif
-}
-
-void MemoryChunk::DecrementExternalBackingStoreBytes(
-    ExternalBackingStoreType type, size_t amount) {
-#ifndef V8_ENABLE_THIRD_PARTY_HEAP
-  base::CheckedDecrement(&external_backing_store_bytes_[type], amount);
-  owner()->DecrementExternalBackingStoreBytes(type, amount);
-#endif
-}
-
-void MemoryChunk::MoveExternalBackingStoreBytes(ExternalBackingStoreType type,
-                                                MemoryChunk* from,
-                                                MemoryChunk* to,
-                                                size_t amount) {
-  DCHECK_NOT_NULL(from->owner());
-  DCHECK_NOT_NULL(to->owner());
-  base::CheckedDecrement(&(from->external_backing_store_bytes_[type]), amount);
-  base::CheckedIncrement(&(to->external_backing_store_bytes_[type]), amount);
-  Space::MoveExternalBackingStoreBytes(type, from->owner(), to->owner(),
-                                       amount);
-}
-
-AllocationSpace MemoryChunk::owner_identity() const {
-  if (InReadOnlySpace()) return RO_SPACE;
-  return owner()->identity();
-}
-
 void Page::MarkNeverAllocateForTesting() {
   DCHECK(this->owner_identity() != NEW_SPACE);
   DCHECK(!IsFlagSet(NEVER_ALLOCATE_ON_PAGE));
@@ -263,10 +232,6 @@ void Page::ClearEvacuationCandidate() {
   }
   ClearFlag(EVACUATION_CANDIDATE);
   InitializeFreeListCategories();
-}
-
-HeapObject LargePage::GetObject() {
-  return HeapObject::FromAddress(area_start());
 }
 
 OldGenerationMemoryChunkIterator::OldGenerationMemoryChunkIterator(Heap* heap)
@@ -372,8 +337,9 @@ AllocationResult LocalAllocationBuffer::AllocateRawAligned(
 
   allocation_info_.set_top(new_top);
   if (filler_size > 0) {
-    return heap_->PrecedeWithFiller(HeapObject::FromAddress(current_top),
-                                    filler_size);
+    return Heap::PrecedeWithFiller(ReadOnlyRoots(heap_),
+                                   HeapObject::FromAddress(current_top),
+                                   filler_size);
   }
 
   return AllocationResult(HeapObject::FromAddress(current_top));
@@ -406,8 +372,9 @@ HeapObject PagedSpace::TryAllocateLinearlyAligned(
   allocation_info_.set_top(new_top);
   if (filler_size > 0) {
     *size_in_bytes += filler_size;
-    return heap()->PrecedeWithFiller(HeapObject::FromAddress(current_top),
-                                     filler_size);
+    return Heap::PrecedeWithFiller(ReadOnlyRoots(heap()),
+                                   HeapObject::FromAddress(current_top),
+                                   filler_size);
   }
 
   return HeapObject::FromAddress(current_top);
@@ -521,7 +488,7 @@ AllocationResult NewSpace::AllocateRawAligned(int size_in_bytes,
   DCHECK_SEMISPACE_ALLOCATION_INFO(allocation_info_, to_space_);
 
   if (filler_size > 0) {
-    obj = heap()->PrecedeWithFiller(obj, filler_size);
+    obj = Heap::PrecedeWithFiller(ReadOnlyRoots(heap()), obj, filler_size);
   }
 
   MSAN_ALLOCATED_UNINITIALIZED_MEMORY(obj.address(), size_in_bytes);
